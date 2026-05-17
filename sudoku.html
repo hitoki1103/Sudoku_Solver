@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>数独ソルバー</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #f5f0e8;
+      --panel-bg:  #fffdf8;
+      --ink:       #1a1208;
+      --ink-light: #7a6a4a;
+      --accent:    #c0392b;
+      --border:    #b8a888;
+      --border-bold: #5a4a2a;
+      --cell-hover: #e8dfc8;
+      --cell-sel:   #d4c8a8;
+      --solved-col: #c0392b;
+      --shadow:    rgba(90,74,42,0.18);
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      font-family: 'Noto Serif JP', serif;
+      color: var(--ink);
+      overflow-x: hidden;
+    }
+
+    /* --- subtle paper texture via SVG filter --- */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='400' height='400' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ===== LAYOUT ===== */
+    .page {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 16px 64px;
+      gap: 28px;
+    }
+
+    header {
+      text-align: center;
+    }
+    header h1 {
+      font-size: 2.4rem;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      line-height: 1.1;
+    }
+    header p {
+      margin-top: 6px;
+      font-size: 0.78rem;
+      color: var(--ink-light);
+      letter-spacing: 0.12em;
+    }
+
+    .main-area {
+      display: flex;
+      align-items: flex-start;
+      gap: 28px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    /* ===== NUMBER PALETTE (left) ===== */
+    .palette {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 14px 10px;
+      background: var(--panel-bg);
+      border: 1.5px solid var(--border);
+      border-radius: 4px;
+      box-shadow: 3px 3px 0 var(--border-bold);
+      user-select: none;
+    }
+    .palette-label {
+      font-size: 0.6rem;
+      color: var(--ink-light);
+      text-align: center;
+      letter-spacing: 0.1em;
+      margin-bottom: 4px;
+    }
+    .num-block {
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'DM Mono', monospace;
+      font-size: 1.3rem;
+      font-weight: 500;
+      background: var(--panel-bg);
+      border: 1.5px solid var(--border-bold);
+      border-radius: 3px;
+      cursor: grab;
+      transition: background 0.12s, transform 0.12s, box-shadow 0.12s;
+      box-shadow: 2px 2px 0 var(--border);
+    }
+    .num-block:hover {
+      background: var(--cell-hover);
+      transform: translateY(-1px);
+      box-shadow: 3px 4px 0 var(--border-bold);
+    }
+    .num-block:active { cursor: grabbing; }
+    .num-block.dragging {
+      opacity: 0.45;
+    }
+
+    /* ===== BOARD ===== */
+    .board-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .board {
+      display: grid;
+      grid-template-columns: repeat(9, 52px);
+      grid-template-rows: repeat(9, 52px);
+      background: var(--border-bold);
+      gap: 1px;
+      border: 3px solid var(--border-bold);
+      border-radius: 3px;
+      box-shadow: 5px 5px 0 var(--shadow);
+    }
+
+    .cell {
+      width: 52px;
+      height: 52px;
+      background: var(--panel-bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'DM Mono', monospace;
+      font-size: 1.45rem;
+      font-weight: 500;
+      color: var(--ink);
+      cursor: pointer;
+      outline: none;
+      border: none;
+      position: relative;
+      transition: background 0.1s;
+      /* thick inner borders for 3x3 boxes */
+    }
+    .cell:hover   { background: var(--cell-hover); }
+    .cell.selected { background: var(--cell-sel); }
+    .cell.drop-over { background: #c8e0c8; }
+
+    /* right thick border after col 2,5 */
+    .cell[data-col="2"], .cell[data-col="5"] {
+      border-right: 2px solid var(--border-bold);
+    }
+    /* bottom thick border after row 2,5 */
+    .cell[data-row="2"], .cell[data-row="5"] {
+      border-bottom: 2px solid var(--border-bold);
+    }
+
+    .cell.given { color: var(--ink); }
+    .cell.solved-filled { color: var(--solved-col); font-weight: 700; }
+
+    /* inline input inside cell */
+    .cell input {
+      width: 100%;
+      height: 100%;
+      border: none;
+      outline: none;
+      background: transparent;
+      text-align: center;
+      font-family: 'DM Mono', monospace;
+      font-size: 1.45rem;
+      font-weight: 500;
+      color: inherit;
+      caret-color: var(--accent);
+      cursor: pointer;
+    }
+
+    /* ===== MESSAGE ===== */
+    .message {
+      min-height: 22px;
+      font-size: 0.78rem;
+      color: var(--accent);
+      letter-spacing: 0.08em;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    /* ===== BUTTONS ===== */
+    .controls {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      width: 100%;
+      max-width: 468px;
+    }
+    button.ctrl-btn {
+      font-family: 'Noto Serif JP', serif;
+      font-size: 0.82rem;
+      letter-spacing: 0.12em;
+      padding: 10px 22px;
+      border: 1.5px solid var(--border-bold);
+      border-radius: 3px;
+      cursor: pointer;
+      transition: background 0.12s, transform 0.1s, box-shadow 0.1s;
+      box-shadow: 2px 2px 0 var(--border-bold);
+    }
+    button.ctrl-btn:active {
+      transform: translate(1px,1px);
+      box-shadow: 1px 1px 0 var(--border-bold);
+    }
+    .btn-clear {
+      background: var(--panel-bg);
+      color: var(--ink-light);
+    }
+    .btn-clear:hover { background: var(--cell-hover); }
+
+    .btn-solve {
+      background: var(--ink);
+      color: var(--bg);
+    }
+    .btn-solve:hover { background: #2d2010; }
+
+    /* ===== DRAG GHOST ===== */
+    #drag-ghost {
+      position: fixed;
+      pointer-events: none;
+      z-index: 9999;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'DM Mono', monospace;
+      font-size: 1.3rem;
+      font-weight: 500;
+      background: var(--panel-bg);
+      border: 1.5px solid var(--border-bold);
+      border-radius: 3px;
+      box-shadow: 4px 4px 0 var(--border-bold);
+      transform: translate(-50%, -50%);
+      display: none;
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>数　独</h1>
+    <p>SUDOKU SOLVER — ドラッグまたはクリックして数字を入力</p>
+  </header>
+
+  <div class="main-area">
+    <!-- LEFT: number palette -->
+    <div class="palette" id="palette">
+      <div class="palette-label">DRAG</div>
+    </div>
+
+    <!-- CENTER: board + controls -->
+    <div class="board-wrap">
+      <div class="board" id="board"></div>
+      <div class="message" id="message"></div>
+      <div class="controls">
+        <button class="ctrl-btn btn-clear" id="btn-clear">クリア</button>
+        <button class="ctrl-btn btn-solve" id="btn-solve">解　答</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- drag ghost -->
+<div id="drag-ghost"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* =====================================================
+     STATE
+  ===================================================== */
+  // grid[row][col] = { value: 0-9, given: bool, solvedFilled: bool }
+  const grid = Array.from({ length: 9 }, () =>
+    Array.from({ length: 9 }, () => ({ value: 0, given: false, solvedFilled: false }))
+  );
+
+  let selectedCell = null; // { row, col }
+  let dragValue = null;
+
+  /* =====================================================
+     BUILD UI
+  ===================================================== */
+  // Palette
+  const palette = document.getElementById('palette');
+  for (let n = 1; n <= 9; n++) {
+    const block = document.createElement('div');
+    block.className = 'num-block';
+    block.textContent = n;
+    block.dataset.num = n;
+    block.draggable = true;
+    palette.appendChild(block);
+  }
+
+  // Board
+  const boardEl = document.getElementById('board');
+  const cellEls = []; // cellEls[row][col]
+
+  for (let r = 0; r < 9; r++) {
+    cellEls[r] = [];
+    for (let c = 0; c < 9; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.dataset.row = r;
+      cell.dataset.col = c;
+      cell.tabIndex = 0;
+
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.inputMode = 'numeric';
+      inp.maxLength = 1;
+      inp.dataset.row = r;
+      inp.dataset.col = c;
+      cell.appendChild(inp);
+
+      boardEl.appendChild(cell);
+      cellEls[r][c] = cell;
+    }
+  }
+
+  /* =====================================================
+     RENDER
+  ===================================================== */
+  function renderAll() {
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        renderCell(r, c);
+      }
+    }
+  }
+
+  function renderCell(r, c) {
+    const s = grid[r][c];
+    const cell = cellEls[r][c];
+    const inp = cell.querySelector('input');
+
+    inp.value = s.value === 0 ? '' : s.value;
+    inp.readOnly = s.given;
+    inp.style.color = s.solvedFilled
+      ? 'var(--solved-col)'
+      : s.given ? 'var(--ink)' : 'var(--ink)';
+
+    cell.classList.toggle('given', s.given);
+    cell.classList.toggle('solved-filled', s.solvedFilled);
+  }
+
+  /* =====================================================
+     CELL SELECTION
+  ===================================================== */
+  function selectCell(r, c) {
+    if (selectedCell) {
+      cellEls[selectedCell.row][selectedCell.col].classList.remove('selected');
+    }
+    selectedCell = { row: r, col: c };
+    cellEls[r][c].classList.add('selected');
+    cellEls[r][c].querySelector('input').focus();
+  }
+
+  /* =====================================================
+     INPUT HANDLING
+  ===================================================== */
+  boardEl.addEventListener('mousedown', e => {
+    const cell = e.target.closest('.cell');
+    if (!cell) return;
+    const r = +cell.dataset.row;
+    const c = +cell.dataset.col;
+    selectCell(r, c);
+  });
+
+  boardEl.addEventListener('keydown', e => {
+    if (!selectedCell) return;
+    const { row, col } = selectedCell;
+    const s = grid[row][col];
+
+    if (e.key >= '1' && e.key <= '9') {
+      if (!s.given) {
+        s.value = +e.key;
+        s.solvedFilled = false;
+        renderCell(row, col);
+        setMessage('');
+      }
+      e.preventDefault();
+    } else if (e.key === 'Backspace' || e.key === 'Delete' || e.key === '0') {
+      if (!s.given) {
+        s.value = 0;
+        s.solvedFilled = false;
+        renderCell(row, col);
+        setMessage('');
+      }
+      e.preventDefault();
+    } else if (e.key === 'ArrowRight') { moveSelect(row, col, 0, 1); e.preventDefault(); }
+    else if (e.key === 'ArrowLeft')  { moveSelect(row, col, 0, -1); e.preventDefault(); }
+    else if (e.key === 'ArrowDown')  { moveSelect(row, col, 1, 0); e.preventDefault(); }
+    else if (e.key === 'ArrowUp')    { moveSelect(row, col, -1, 0); e.preventDefault(); }
+  });
+
+  // Intercept input event on individual inputs to validate
+  boardEl.addEventListener('input', e => {
+    const inp = e.target;
+    if (inp.tagName !== 'INPUT') return;
+    const r = +inp.dataset.row;
+    const c = +inp.dataset.col;
+    const s = grid[r][c];
+    if (s.given) { inp.value = s.value; return; }
+
+    const val = inp.value.replace(/[^1-9]/g, '');
+    if (val === '') {
+      s.value = 0;
+      s.solvedFilled = false;
+      inp.value = '';
+    } else {
+      s.value = +val.slice(-1);
+      s.solvedFilled = false;
+      inp.value = s.value;
+    }
+    setMessage('');
+  });
+
+  function moveSelect(r, c, dr, dc) {
+    const nr = (r + dr + 9) % 9;
+    const nc = (c + dc + 9) % 9;
+    selectCell(nr, nc);
+  }
+
+  /* =====================================================
+     DRAG & DROP — palette → board
+  ===================================================== */
+  const ghost = document.getElementById('drag-ghost');
+
+  palette.addEventListener('dragstart', e => {
+    const block = e.target.closest('.num-block');
+    if (!block) return;
+    dragValue = +block.dataset.num;
+    block.classList.add('dragging');
+    ghost.textContent = dragValue;
+    ghost.style.display = 'flex';
+    // hide default ghost
+    const blank = document.createElement('canvas');
+    blank.width = blank.height = 1;
+    e.dataTransfer.setDragImage(blank, 0, 0);
+    e.dataTransfer.effectAllowed = 'copy';
+  });
+
+  palette.addEventListener('dragend', e => {
+    const block = e.target.closest('.num-block');
+    if (block) block.classList.remove('dragging');
+    ghost.style.display = 'none';
+    dragValue = null;
+    // clear drop-over
+    document.querySelectorAll('.cell.drop-over').forEach(el => el.classList.remove('drop-over'));
+  });
+
+  document.addEventListener('dragover', e => {
+    e.preventDefault();
+    ghost.style.left = e.clientX + 'px';
+    ghost.style.top  = e.clientY + 'px';
+  });
+
+  boardEl.addEventListener('dragover', e => {
+    e.preventDefault();
+    const cell = e.target.closest('.cell');
+    document.querySelectorAll('.cell.drop-over').forEach(el => el.classList.remove('drop-over'));
+    if (cell) cell.classList.add('drop-over');
+  });
+
+  boardEl.addEventListener('dragleave', e => {
+    if (!boardEl.contains(e.relatedTarget)) {
+      document.querySelectorAll('.cell.drop-over').forEach(el => el.classList.remove('drop-over'));
+    }
+  });
+
+  boardEl.addEventListener('drop', e => {
+    e.preventDefault();
+    document.querySelectorAll('.cell.drop-over').forEach(el => el.classList.remove('drop-over'));
+    if (dragValue === null) return;
+    const cell = e.target.closest('.cell');
+    if (!cell) return;
+    const r = +cell.dataset.row;
+    const c = +cell.dataset.col;
+    const s = grid[r][c];
+    if (s.given) return;
+    s.value = dragValue;
+    s.solvedFilled = false;
+    renderCell(r, c);
+    selectCell(r, c);
+    setMessage('');
+  });
+
+  /* =====================================================
+     TOUCH DRAG (mobile support)
+  ===================================================== */
+  let touchBlock = null;
+  let touchGhostActive = false;
+
+  palette.addEventListener('touchstart', e => {
+    const block = e.target.closest('.num-block');
+    if (!block) return;
+    touchBlock = block;
+    dragValue = +block.dataset.num;
+    ghost.textContent = dragValue;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', e => {
+    if (!touchBlock) return;
+    const touch = e.touches[0];
+    ghost.style.display = 'flex';
+    ghost.style.left = touch.clientX + 'px';
+    ghost.style.top  = touch.clientY + 'px';
+    touchGhostActive = true;
+
+    // highlight cell under finger
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    document.querySelectorAll('.cell.drop-over').forEach(c => c.classList.remove('drop-over'));
+    const cell = el && el.closest('.cell');
+    if (cell) cell.classList.add('drop-over');
+  }, { passive: true });
+
+  document.addEventListener('touchend', e => {
+    if (!touchBlock) return;
+    const touch = e.changedTouches[0];
+    ghost.style.display = 'none';
+    touchGhostActive = false;
+    document.querySelectorAll('.cell.drop-over').forEach(c => c.classList.remove('drop-over'));
+
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    const cell = el && el.closest('.cell');
+    if (cell) {
+      const r = +cell.dataset.row;
+      const c = +cell.dataset.col;
+      const s = grid[r][c];
+      if (!s.given) {
+        s.value = dragValue;
+        s.solvedFilled = false;
+        renderCell(r, c);
+        selectCell(r, c);
+        setMessage('');
+      }
+    }
+    touchBlock = null;
+    dragValue = null;
+  });
+
+  /* =====================================================
+     CLEAR BUTTON
+  ===================================================== */
+  document.getElementById('btn-clear').addEventListener('click', () => {
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        grid[r][c] = { value: 0, given: false, solvedFilled: false };
+      }
+    }
+    selectedCell = null;
+    setMessage('');
+    renderAll();
+  });
+
+  /* =====================================================
+     SOLVE BUTTON
+  ===================================================== */
+  document.getElementById('btn-solve').addEventListener('click', () => {
+    // Snapshot current state as "given"
+    const snapshot = Array.from({ length: 9 }, (_, r) =>
+      Array.from({ length: 9 }, (_, c) => grid[r][c].value)
+    );
+
+    // Mark existing user entries as "given" for this solve attempt
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        grid[r][c].given = grid[r][c].value !== 0;
+        grid[r][c].solvedFilled = false;
+      }
+    }
+
+    // Validate before solving
+    if (!isValidBoard()) {
+      setMessage('⚠ 入力に矛盾があります。確認してください。');
+      // Revert given flags
+      for (let r = 0; r < 9; r++)
+        for (let c = 0; c < 9; c++)
+          grid[r][c].given = false;
+      renderAll();
+      return;
+    }
+
+    const board = snapshot.map(row => [...row]);
+    const ok = solveSudoku(board);
+
+    if (!ok) {
+      setMessage('⚠ この問題は解けません。入力を確認してください。');
+      for (let r = 0; r < 9; r++)
+        for (let c = 0; c < 9; c++)
+          grid[r][c].given = false;
+      renderAll();
+      return;
+    }
+
+    // Fill solved cells
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        if (!grid[r][c].given) {
+          grid[r][c].value = board[r][c];
+          grid[r][c].solvedFilled = true;
+        }
+      }
+    }
+    setMessage('✓ 解答完了！');
+    renderAll();
+  });
+
+  /* =====================================================
+     SUDOKU SOLVER (backtracking)
+  ===================================================== */
+  function solveSudoku(b) {
+    const empty = findEmpty(b);
+    if (!empty) return true; // solved
+
+    const [r, c] = empty;
+    for (let num = 1; num <= 9; num++) {
+      if (isValid(b, r, c, num)) {
+        b[r][c] = num;
+        if (solveSudoku(b)) return true;
+        b[r][c] = 0;
+      }
+    }
+    return false;
+  }
+
+  function findEmpty(b) {
+    for (let r = 0; r < 9; r++)
+      for (let c = 0; c < 9; c++)
+        if (b[r][c] === 0) return [r, c];
+    return null;
+  }
+
+  function isValid(b, row, col, num) {
+    // row
+    if (b[row].includes(num)) return false;
+    // col
+    for (let r = 0; r < 9; r++) if (b[r][col] === num) return false;
+    // box
+    const br = Math.floor(row / 3) * 3;
+    const bc = Math.floor(col / 3) * 3;
+    for (let r = br; r < br + 3; r++)
+      for (let c = bc; c < bc + 3; c++)
+        if (b[r][c] === num) return false;
+    return true;
+  }
+
+  function isValidBoard() {
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        const v = grid[r][c].value;
+        if (v === 0) continue;
+        // temporarily remove, check
+        const b = buildBoard();
+        b[r][c] = 0;
+        if (!isValid(b, r, c, v)) return false;
+      }
+    }
+    return true;
+  }
+
+  function buildBoard() {
+    return grid.map(row => row.map(s => s.value));
+  }
+
+  /* =====================================================
+     MESSAGE
+  ===================================================== */
+  function setMessage(msg) {
+    document.getElementById('message').textContent = msg;
+  }
+
+  /* =====================================================
+     INIT
+  ===================================================== */
+  renderAll();
+
+})();
+</script>
+</body>
+</html>
