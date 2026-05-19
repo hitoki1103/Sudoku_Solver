@@ -290,6 +290,32 @@
       max-width: 468px;
       margin-bottom: -6px;
     }
+
+    /* ===== AD COLUMNS ===== */
+    .ad-col {
+      position: fixed;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 160px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      z-index: 10;
+      pointer-events: none; /* let clicks pass through if ad doesn't load */
+    }
+    .ad-col > * { pointer-events: auto; }
+
+    .ad-col-left  { left: 12px; }
+    .ad-col-right { right: 12px; }
+
+    /* Hide ads when viewport is too narrow */
+    @media (max-width: 1100px) {
+      .ad-col-right { display: none; }
+    }
+    @media (max-width: 900px) {
+      .ad-col-left  { display: none; }
+    }
   </style>
 </head>
 <body>
@@ -326,6 +352,20 @@
     </div>
   </div>
 </div>
+
+  <!-- AD: left column -->
+  <div class="ad-col ad-col-left">
+    <!-- admax -->
+    <script src="https://adm.shinobi.jp/s/fe9b4a9103064899a8f6eb94aad5eef7"></script>
+    <!-- admax -->
+  </div>
+
+  <!-- AD: right column -->
+  <div class="ad-col ad-col-right">
+    <!-- admax -->
+    <script src="https://adm.shinobi.jp/s/fe9b4a9103064899a8f6eb94aad5eef7"></script>
+    <!-- admax -->
+  </div>
 
 <!-- Image source popup -->
 <div class="img-popup-overlay" id="img-popup-overlay">
