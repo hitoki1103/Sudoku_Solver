@@ -294,9 +294,9 @@
     /* ===== AD COLUMNS ===== */
     .ad-col {
       position: fixed;
-      top: 50%;
+      top: 60%; /* 元50px */
       transform: translateY(-50%);
-      width: 200px;
+      width: 160px; /* ここ変えても広告の大きさは変わらない */
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -306,7 +306,7 @@
     }
     .ad-col > * { pointer-events: auto; }
 
-    .ad-col-left  { left: 50px; }/*元12*/
+    .ad-col-left  { left: 50px; } /* 元12px */
     .ad-col-right { right: 50px; }
 
     /* Hide ads when viewport is too narrow */
